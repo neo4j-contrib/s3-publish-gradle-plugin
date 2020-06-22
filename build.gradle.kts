@@ -19,6 +19,7 @@ dependencies {
     implementation("org.jetbrains.kotlin:kotlin-stdlib-jdk8")
     testImplementation("org.jetbrains.kotlin:kotlin-test")
     testImplementation("org.jetbrains.kotlin:kotlin-test-junit")
+    testImplementation("io.mockk:mockk:1.10.0")
 }
 
 version = "0.1.0"

@@ -22,7 +22,7 @@ dependencies {
     testImplementation("io.mockk:mockk:1.10.0")
 }
 
-version = "0.1.0"
+version = "0.1.1"
 
 gradlePlugin {
     plugins {

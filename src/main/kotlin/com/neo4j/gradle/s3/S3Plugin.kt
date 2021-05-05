@@ -8,6 +8,7 @@ import com.amazonaws.auth.profile.ProfileCredentialsProvider
 import com.amazonaws.services.s3.AmazonS3
 import com.amazonaws.services.s3.AmazonS3ClientBuilder
 import com.amazonaws.services.s3.model.CannedAccessControlList
+import com.amazonaws.services.s3.model.ObjectMetadata
 import com.amazonaws.services.s3.model.PutObjectRequest
 import com.amazonaws.services.s3.model.PutObjectResult
 import org.gradle.api.DefaultTask
@@ -17,7 +18,10 @@ import org.gradle.api.file.ConfigurableFileTree
 import org.gradle.api.logging.Logger
 import org.gradle.api.model.ObjectFactory
 import org.gradle.api.provider.Property
-import org.gradle.api.tasks.*
+import org.gradle.api.tasks.Input
+import org.gradle.api.tasks.InputFiles
+import org.gradle.api.tasks.Optional
+import org.gradle.api.tasks.TaskAction
 import org.gradle.kotlin.dsl.property
 import java.io.File
 
@@ -59,9 +63,29 @@ class S3Client(profileCreds: ProfileCredentialsProvider, regionValue: String) {
   fun putObject(putObjectRequest: PutObjectRequest): PutObjectResult = underlying.putObject(putObjectRequest)
 }
 
-data class S3UploadContext(val destination: String, val bucket: String, val overwrite: Boolean = false, val acl: CannedAccessControlList? = null)
+data class S3UploadContext(val destination: String,
+                           val bucket: String,
+                           val overwrite: Boolean = false,
+                           val acl: CannedAccessControlList? = null,
+                           val contentTypeMapping: Map<String, String> = emptyMap())
 
 class S3UploadProcessor(private val s3Client: S3Client, private val s3UploadContext: S3UploadContext, private val logger: Logger) {
+
+  val contentTypeMapping = mapOf(
+    ".css" to "text/css",
+    ".csv" to "text/csv",
+    ".gif" to "image/gif",
+    ".htm" to "text/html",
+    ".html" to "text/html",
+    ".jpeg" to "image/jpeg",
+    ".jpg" to "image/jpeg",
+    ".js" to "text/javascript",
+    ".json" to "text/json",
+    ".pdf" to "application/pdf",
+    ".png" to "image/png",
+    ".svg" to "image/svg+xml",
+    ".txt" to "text/plain"
+  ) + s3UploadContext.contentTypeMapping
 
   fun process(files: Set<File>, baseDir: File) {
     val (destination, bucket, overwrite, acl) = s3UploadContext
@@ -82,6 +106,12 @@ class S3UploadProcessor(private val s3Client: S3Client, private val s3UploadCont
         basePutObjectRequest.withCannedAcl(acl)
       } else {
         basePutObjectRequest
+      }
+      val contentType = contentTypeMapping[".${file.extension}"]
+      if (contentType != null) {
+        val objectMetadata = ObjectMetadata()
+        basePutObjectRequest.metadata = objectMetadata
+        objectMetadata.contentType = contentType
       }
       if (s3Client.doesObjectExist(bucketValue, destinationPath)) {
         if (overwrite) {
@@ -121,6 +151,10 @@ abstract class S3UploadTask : DefaultTask() {
   @Optional
   val acl: Property<CannedAccessControlList> = project.objects.property()
 
+  @Input
+  @Optional
+  val contentTypeMapping: Property<Map<String, String>> = project.objects.property()
+
   @TaskAction
   fun task() {
     val s3Extension = project.extensions.findByType(S3Extension::class.java)
@@ -134,7 +168,9 @@ abstract class S3UploadTask : DefaultTask() {
       ProfileCredentialsProvider()
     }
     val s3Client = S3Client(profileCreds, regionValue)
-    val s3UploadContext = S3UploadContext(destination, bucketValue, overwrite, if(acl.isPresent) acl.get() else null)
+    val accessControlListValue = if (acl.isPresent) acl.get() else null
+    val contentTypeMappingValue = if (contentTypeMapping.isPresent) contentTypeMapping.get() else mapOf()
+    val s3UploadContext = S3UploadContext(destination, bucketValue, overwrite, accessControlListValue, contentTypeMappingValue)
     val s3UploadProcessor = S3UploadProcessor(s3Client, s3UploadContext, logger)
     sources.forEach { source ->
       s3UploadProcessor.process(source.files, source.dir)
